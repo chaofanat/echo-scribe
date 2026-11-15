@@ -19,6 +19,7 @@ class Recording {
     this.segments = const [],
     this.speakerCount = 0,
     this.source = AudioSource.microphone,
+    this.tags = const [],
   });
 
   final String wavPath;
@@ -31,6 +32,9 @@ class Recording {
   /// Whether this recording came from the microphone or system-audio
   /// loopback; microphone for recordings predating the field.
   final AudioSource source;
+
+  /// User-assigned tags, used for filtering in the library.
+  final List<String> tags;
 
   /// Time-spans and speaker attribution per finalized segment; empty for
   /// recordings made before diarization (or when it failed).
@@ -60,6 +64,7 @@ class Recording {
         'segments': [for (final segment in segments) segment.toJson()],
         'speakerCount': speakerCount,
         'source': source.id,
+        'tags': tags,
       };
 
   static Recording fromJson(String wavPath, Map<String, Object?> json) =>
@@ -75,6 +80,9 @@ class Recording {
         segments: parseSegments(json['segments']),
         speakerCount: json['speakerCount'] as int? ?? 0,
         source: AudioSource.fromId(json['source'] as String?),
+        tags: (json['tags'] as List<Object?>? ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
       );
 }
 
@@ -115,6 +123,15 @@ class RecordingsRepository {
     }
     recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return recordings;
+  }
+
+  /// Replaces the recording's tags in the sidecar. Callers reload the list
+  /// afterwards ([Recording.tags] is immutable).
+  Future<void> updateTags(Recording recording, List<String> tags) async {
+    final sidecar = File(recording.sidecarPath);
+    final data = Map<String, Object?>.from(await _readOrBuild(recording))
+      ..['tags'] = tags;
+    await sidecar.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
   }
 
   /// Updates the recording's title (stored in the sidecar only; the audio

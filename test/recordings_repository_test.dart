@@ -116,6 +116,29 @@ void main() {
     expect(item.displayTranscript, '旧录音');
   });
 
+  test('tags round-trip and updateTags preserves other metadata', () async {
+    await writeRecording('rec-tagged', transcript: '你好');
+    await File('${tmp.path}/rec-tagged.json').writeAsString(
+      '{"title": "rec-tagged", "createdAt": "${DateTime(2026, 1, 1).toIso8601String()}",'
+      ' "durationMs": 5000, "transcript": "你好", "tags": ["会议", "重要"]}',
+    );
+    final item = (await repo.list()).single;
+
+    expect(item.tags, ['会议', '重要']);
+    // Recordings without the field read as tagless.
+    await writeRecording('rec-untagged', transcript: '再见');
+    final untagged = (await repo.list())
+        .firstWhere((r) => r.title == 'rec-untagged');
+    expect(untagged.tags, isEmpty);
+
+    await repo.updateTags(item, ['草稿']);
+    final reloaded = (await repo.list())
+        .firstWhere((r) => r.title == 'rec-tagged');
+    expect(reloaded.tags, ['草稿']);
+    expect(reloaded.transcript, '你好');
+    expect(reloaded.duration, const Duration(seconds: 5));
+  });
+
   test('capture source round-trips through the sidecar', () async {
     await writeRecording('rec-loopback', transcript: '视频讲解');
     await File('${tmp.path}/rec-loopback.json').writeAsString(

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../asr/capture_source.dart';
 import '../asr/diarizer.dart';
 import '../asr/transcript_segment.dart';
+import 'recording_filter.dart';
 import 'recordings_repository.dart';
 import '../utils/format.dart';
 
@@ -25,10 +26,23 @@ class LibraryPageState extends State<LibraryPage> {
   SpeakerDiarizer? _diarizer;
   bool _reanalyzing = false;
 
+  final _searchController = TextEditingController();
+  bool _searching = false;
+  String _query = '';
+
+  /// Active tag filter; null shows all recordings.
+  String? _activeTag;
+
   @override
   void initState() {
     super.initState();
     _init();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _init() async {
@@ -171,6 +185,100 @@ class LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Tag editor: existing library tags as checkboxes plus free-text input
+  /// for new ones; the result is written back to the sidecar.
+  Future<void> _editTags(Recording recording) async {
+    final all = [...collectTags(_items)];
+    final selected = {...recording.tags};
+    final input = TextEditingController();
+    const dialogWidth = 360.0;
+
+    void addTag(String raw, void Function(void Function()) setDialogState) {
+      final tag = raw.trim();
+      if (tag.isEmpty) return;
+      setDialogState(() {
+        selected.add(tag);
+        if (!all.contains(tag)) all.insert(0, tag);
+      });
+      input.clear();
+    }
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('编辑标签'),
+          content: SizedBox(
+            width: dialogWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final tag in all)
+                        CheckboxListTile(
+                          value: selected.contains(tag),
+                          onChanged: (checked) => setDialogState(() => checked!
+                              ? selected.add(tag)
+                              : selected.remove(tag)),
+                          title: Text(tag),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                    ],
+                  ),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: input,
+                        decoration: const InputDecoration(
+                          hintText: '新标签',
+                          isDense: true,
+                        ),
+                        onSubmitted: (value) => addTag(value, setDialogState),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '添加标签',
+                      icon: const Icon(Icons.add),
+                      onPressed: () => addTag(input.text, setDialogState),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved ?? false) {
+      await _repo!.updateTags(recording, selected.toList()..sort());
+      await refresh();
+    }
+  }
+
+  void _closeSearch() {
+    _searchController.clear();
+    setState(() {
+      _searching = false;
+      _query = '';
+    });
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -214,92 +322,197 @@ class LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tags = collectTags(_items);
+    final filtered =
+        filterRecordings(_items, query: _query, tag: _activeTag);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('录音库')),
+      appBar: AppBar(
+        title: _searching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '搜索标题或转写内容',
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) => setState(() => _query = value),
+              )
+            : const Text('录音库'),
+        actions: [
+          if (_searching)
+            IconButton(
+              tooltip: '关闭搜索',
+              icon: const Icon(Icons.close),
+              onPressed: _closeSearch,
+            )
+          else
+            IconButton(
+              tooltip: '搜索',
+              icon: const Icon(Icons.search),
+              onPressed: () => setState(() => _searching = true),
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _items.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.library_music,
-                          size: 56, color: theme.colorScheme.outlineVariant),
-                      const SizedBox(height: 12),
-                      Text(
-                        '还没有录音，去录一条吧',
-                        style: TextStyle(
-                            color: theme.colorScheme.outline, fontSize: 15),
-                      ),
+              ? _emptyHint(theme, Icons.library_music, '还没有录音，去录一条吧')
+              : Column(
+                  children: [
+                    if (tags.isNotEmpty) ...[
+                      _tagFilterRow(theme, tags),
+                      const Divider(height: 1),
                     ],
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: _items.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final item = _items[index];
-                    final summary = item.transcript.isEmpty
-                        ? '（无转写内容）'
-                        : item.transcript.replaceAll('\n', ' ');
-                    return ListTile(
-                      leading: const Icon(Icons.graphic_eq),
-                      title: Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '${item.source == AudioSource.systemAudio ? '内录 · ' : ''}'
-                        '${_fmtDate(item.createdAt)} · ${formatDuration(item.duration)} · $summary',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () => _showTranscript(item),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (action) {
-                          switch (action) {
-                            case 'rename':
-                              _showRenameDialog(item);
-                            case 'reanalyze':
-                              _reanalyze(item);
-                            case 'delete':
-                              _confirmDelete(item);
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: 'rename',
-                            child: ListTile(
-                              leading: Icon(Icons.edit),
-                              title: Text('重命名'),
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? _emptyHint(
+                              theme, Icons.search_off, '没有匹配的录音')
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
+                                final summary = item.transcript.isEmpty
+                                    ? '（无转写内容）'
+                                    : item.transcript.replaceAll('\n', ' ');
+                                return ListTile(
+                                  leading: const Icon(Icons.graphic_eq),
+                                  title: Text(
+                                    item.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${item.source == AudioSource.systemAudio ? '内录 · ' : ''}'
+                                        '${_fmtDate(item.createdAt)} · ${formatDuration(item.duration)} · $summary',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (item.tags.isNotEmpty)
+                                        Text(
+                                          item.tags
+                                              .map((tag) => '#$tag')
+                                              .join(' '),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color:
+                                                theme.colorScheme.primary,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  onTap: () => _showTranscript(item),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (action) {
+                                      switch (action) {
+                                        case 'rename':
+                                          _showRenameDialog(item);
+                                        case 'reanalyze':
+                                          _reanalyze(item);
+                                        case 'tags':
+                                          _editTags(item);
+                                        case 'delete':
+                                          _confirmDelete(item);
+                                      }
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(
+                                        value: 'rename',
+                                        child: ListTile(
+                                          leading: Icon(Icons.edit),
+                                          title: Text('重命名'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'reanalyze',
+                                        child: ListTile(
+                                          leading: Icon(Icons.groups),
+                                          title: Text('重新分析说话人'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'tags',
+                                        child: ListTile(
+                                          leading: Icon(Icons.sell),
+                                          title: Text('编辑标签'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: ListTile(
+                                          leading: Icon(Icons.delete),
+                                          title: Text('删除'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
-                          ),
-                          PopupMenuItem(
-                            value: 'reanalyze',
-                            child: ListTile(
-                              leading: Icon(Icons.groups),
-                              title: Text('重新分析说话人'),
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: ListTile(
-                              leading: Icon(Icons.delete),
-                              title: Text('删除'),
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
+    );
+  }
+
+  Widget _tagFilterRow(ThemeData theme, List<String> tags) {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: const Text('全部'),
+              selected: _activeTag == null,
+              onSelected: (_) => setState(() => _activeTag = null),
+            ),
+          ),
+          for (final tag in tags)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(tag),
+                selected: _activeTag == tag,
+                onSelected: (_) => setState(() => _activeTag = tag),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyHint(ThemeData theme, IconData icon, String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 56, color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: TextStyle(color: theme.colorScheme.outline, fontSize: 15),
+          ),
+        ],
+      ),
     );
   }
 
