@@ -22,3 +22,6 @@ assets/models/*
 # OS
 Thumbs.db
 .DS_Store
+
+# Android NDK/Gradle build caches in vendored plugins
+**/.cxx/
