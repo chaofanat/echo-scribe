@@ -1,0 +1,24 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Model files are downloaded via scripts/download_model.ps1, never committed.
+assets/models/*
+!assets/models/.gitkeep
+
+# ZCode session artifacts
+.zcode/
+
+# OS
+Thumbs.db
+.DS_Store

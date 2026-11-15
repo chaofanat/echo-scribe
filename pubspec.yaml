@@ -1,0 +1,31 @@
+name: echo_scribe
+description: "Offline real-time speech transcription built on sherpa-onnx."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  material_ui: ^1.1.0
+  path_provider: ^2.1.3
+  path: ^1.9.0
+  record: ^6.1.2
+  sherpa_onnx: ^2.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # NOTE: directory assets are not recursive; when switching models,
+    # update this entry together with lib/asr/model_config.dart.
+    - assets/models/sherpa-onnx-x-asr-960ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05/
