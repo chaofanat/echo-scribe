@@ -3,8 +3,11 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../asr/transcript_segment.dart';
+
 /// A saved recording: a WAV file plus a sidecar `.json` file (same stem)
-/// holding its title, transcript and duration.
+/// holding its title, transcript, duration and (once diarization has run)
+/// speaker-labeled segments.
 class Recording {
   Recording({
     required this.wavPath,
@@ -12,6 +15,8 @@ class Recording {
     required this.createdAt,
     required this.duration,
     required this.transcript,
+    this.segments = const [],
+    this.speakerCount = 0,
   });
 
   final String wavPath;
@@ -21,15 +26,33 @@ class Recording {
   final Duration duration;
   final String transcript;
 
+  /// Time-spans and speaker attribution per finalized segment; empty for
+  /// recordings made before diarization (or when it failed).
+  final List<TranscriptSegment> segments;
+
+  /// Number of distinct speakers found; 0 when diarization hasn't run.
+  final int speakerCount;
+
   String get id => p.basenameWithoutExtension(wavPath);
 
   String get sidecarPath => p.join(p.dirname(wavPath), '$id.json');
+
+  /// Transcript with "说话人N：" prefixes when more than one speaker was
+  /// found; one line per sentence (segments are already sentence-granular)
+  /// or the plain transcript for legacy recordings without segments.
+  String get displayTranscript {
+    if (speakerCount > 1) return joinLabeledTranscript(segments);
+    if (segments.isEmpty) return transcript;
+    return segments.map((segment) => segment.text).join('\n');
+  }
 
   Map<String, Object?> toJson() => {
         'title': title,
         'createdAt': createdAt.toIso8601String(),
         'durationMs': duration.inMilliseconds,
         'transcript': transcript,
+        'segments': [for (final segment in segments) segment.toJson()],
+        'speakerCount': speakerCount,
       };
 
   static Recording fromJson(String wavPath, Map<String, Object?> json) =>
@@ -42,6 +65,8 @@ class Recording {
         duration:
             Duration(milliseconds: json['durationMs'] as int? ?? 0),
         transcript: json['transcript'] as String? ?? '',
+        segments: parseSegments(json['segments']),
+        speakerCount: json['speakerCount'] as int? ?? 0,
       );
 }
 
@@ -99,6 +124,25 @@ class RecordingsRepository {
     await File(recording.wavPath).delete();
     final sidecar = File(recording.sidecarPath);
     if (await sidecar.exists()) await sidecar.delete();
+  }
+
+  /// Replaces the speaker-labeled segments in the sidecar; used when a
+  /// recording is re-analyzed with a different speaker count. [speakerTurns]
+  /// (serialized diarization output) is optional.
+  Future<void> updateSegments(
+    Recording recording,
+    List<TranscriptSegment> segments,
+    int speakerCount, [
+    List<Map<String, Object?>>? speakerTurns,
+  ]) async {
+    final sidecar = File(recording.sidecarPath);
+    final data = Map<String, Object?>.from(await _readOrBuild(recording))
+      ..['segments'] = [for (final segment in segments) segment.toJson()]
+      ..['speakerCount'] = speakerCount;
+    if (speakerTurns != null) {
+      data['speakerTurns'] = [for (final turn in speakerTurns) Map<String, Object?>.from(turn)];
+    }
+    await sidecar.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
   }
 
   Future<Map<String, Object?>> _readOrBuild(Recording recording) async {

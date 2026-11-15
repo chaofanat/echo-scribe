@@ -28,5 +28,7 @@ flutter:
   uses-material-design: true
   assets:
     # NOTE: directory assets are not recursive; when switching models,
-    # update this entry together with lib/asr/model_config.dart.
+    # update these entries together with lib/asr/model_config.dart.
     - assets/models/sherpa-onnx-x-asr-960ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05/
+    - assets/models/sherpa-onnx-pyannote-segmentation-3-0/
+    - assets/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx

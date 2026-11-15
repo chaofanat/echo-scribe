@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'asr/diarizer.dart';
 import 'asr/recognizer.dart';
 import 'asr/recording_session.dart';
 import 'library/library_page.dart';
@@ -73,9 +74,14 @@ class RecorderPage extends StatefulWidget {
 
 class _RecorderPageState extends State<RecorderPage> {
   StreamingRecognizer? _recognizer;
+  SpeakerDiarizer? _diarizer;
   bool _loadingRecognizer = false;
   RecordingSession? _session;
   final _scroll = ScrollController();
+
+  /// Speaker-count hint for diarization clustering: 0 = auto.
+  int _expectedSpeakers = 0;
+  bool _wasDiarizing = false;
 
   @override
   void dispose() {
@@ -105,6 +111,13 @@ class _RecorderPageState extends State<RecorderPage> {
       setState(() => _loadingRecognizer = true);
       try {
         _recognizer = await StreamingRecognizer.create();
+        // Diarization is optional: a failure here only means recordings are
+        // saved without speaker labels.
+        try {
+          _diarizer = await SpeakerDiarizer.create();
+        } catch (e) {
+          debugPrint('diarizer create failed: $e');
+        }
       } catch (e) {
         if (mounted) {
           _snack('模型加载失败：请先运行 scripts/download_model.ps1 下载模型');
@@ -115,7 +128,8 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       if (_recognizer == null) return;
     }
-    await _startSession(RecordingSession(_recognizer!));
+    await _startSession(
+        RecordingSession(_recognizer!, _diarizer, _expectedSpeakers));
   }
 
   Future<void> _startSession(RecordingSession session) async {
@@ -131,6 +145,27 @@ class _RecorderPageState extends State<RecorderPage> {
 
   void _onSessionChanged() {
     setState(() {});
+    final session = _session;
+    // Diarization just finished: tell the user what came out so a "1
+    // speaker" result is visible instead of silently hiding all labels.
+    if (session != null && _wasDiarizing && !session.diarizing) {
+      final error = session.diarizeError;
+      if (error != null) {
+        _snack(error);
+      } else if (session.speakerCount > 1) {
+        if (session.speakerClusters > session.speakerCount) {
+          _snack('已聚成 ${session.speakerClusters} 类，${session.speakerCount} 位说话人实际落到句子上'
+              '（人数可能设置偏多，可重新分析调整）');
+        } else {
+          _snack('已识别到 ${session.speakerCount} 位说话人');
+        }
+      } else if (session.speakerCount == 1) {
+        _snack('仅识别到 1 位说话人（可在录音库中重新分析并指定人数）');
+      } else {
+        _snack('说话人分析未产生结果');
+      }
+    }
+    _wasDiarizing = session?.diarizing ?? false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -139,7 +174,7 @@ class _RecorderPageState extends State<RecorderPage> {
   }
 
   Future<void> _copyTranscript() async {
-    final text = _session?.transcript ?? '';
+    final text = _session?.labeledTranscript ?? '';
     if (text.isEmpty) {
       _snack('暂无转写内容');
       return;
@@ -147,6 +182,13 @@ class _RecorderPageState extends State<RecorderPage> {
     await Clipboard.setData(ClipboardData(text: text));
     _snack('转写已复制到剪贴板');
   }
+
+  PopupMenuEntry<String> _speakerCountItem(int value, String label) =>
+      CheckedPopupMenuItem(
+        value: value.toString(),
+        checked: _expectedSpeakers == value,
+        child: Text(label),
+      );
 
   void _snack(String message) {
     ScaffoldMessenger.of(context)
@@ -164,6 +206,17 @@ class _RecorderPageState extends State<RecorderPage> {
       appBar: AppBar(
         title: const Text('EchoScribe'),
         actions: [
+          PopupMenuButton<String>(
+            tooltip: '说话人数',
+            icon: const Icon(Icons.groups),
+            onSelected: (value) =>
+                setState(() => _expectedSpeakers = int.parse(value)),
+            itemBuilder: (_) => [
+              _speakerCountItem(0, '自动检测'),
+              for (final n in const [2, 3, 4, 5, 6, 7, 8, 9, 10])
+                _speakerCountItem(n, '$n 人'),
+            ],
+          ),
           IconButton(
             tooltip: '复制全文',
             icon: const Icon(Icons.copy),
@@ -178,18 +231,12 @@ class _RecorderPageState extends State<RecorderPage> {
           Expanded(
             child: !hasTranscript && !_isRecording
                 ? _emptyHint(theme)
-                : ListView(
+                  : ListView(
                     controller: _scroll,
                     padding: const EdgeInsets.all(16),
                     children: [
-                      for (final segment in session!.segments)
-                        Text(
-                          segment,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            height: 1.7,
-                          ),
-                        ),
+                      for (var i = 0; i < session!.segments.length; i++)
+                        _segmentText(session, i),
                       if (session.partial.isNotEmpty)
                         Text(
                           session.partial,
@@ -213,24 +260,70 @@ class _RecorderPageState extends State<RecorderPage> {
     );
   }
 
+  /// One finalized segment; prefixes a "说话人N" label whenever the speaker
+  /// differs from the previous segment (labels only appear after
+  /// diarization ran and found more than one speaker).
+  Widget _segmentText(RecordingSession session, int index) {
+    final segment = session.segments[index];
+    final speaker = segment.speaker;
+    final startsTurn = session.speakerCount > 1 &&
+        speaker != null &&
+        (index == 0 || session.segments[index - 1].speaker != speaker);
+    if (!startsTurn) {
+      return Text(
+        segment.text,
+        style: const TextStyle(fontSize: 17, height: 1.7),
+      );
+    }
+    final theme = Theme.of(context);
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(
+          text: '说话人${speaker + 1}　',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        TextSpan(text: segment.text),
+      ]),
+      style: const TextStyle(fontSize: 17, height: 1.7),
+    );
+  }
+
   Widget _statusRow(ThemeData theme, RecordingSession? session) {
     final recording = session?.status == SessionStatus.recording;
+    final analyzing = session?.diarizing == true;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
           Icon(
-            recording ? Icons.fiber_manual_record : Icons.mic_off,
+            recording
+                ? Icons.fiber_manual_record
+                : analyzing
+                    ? Icons.groups
+                    : Icons.mic_off,
             size: 16,
-            color: recording ? theme.colorScheme.error : theme.colorScheme.outline,
+            color: recording
+                ? theme.colorScheme.error
+                : analyzing
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outline,
           ),
           const SizedBox(width: 8),
           Text(
             recording
                 ? '录音中 ${formatDuration(session!.elapsed)}'
-                : '未在录音',
+                : analyzing
+                    ? '正在分析说话人…'
+                    : '未在录音',
             style: TextStyle(
-              color: recording ? theme.colorScheme.error : theme.colorScheme.outline,
+              color: recording
+                  ? theme.colorScheme.error
+                  : analyzing
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outline,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -278,13 +371,15 @@ class _RecorderPageState extends State<RecorderPage> {
       );
     }
     final recording = _isRecording;
+    final analyzing = _session?.diarizing == true;
     return ClipOval(
       child: Material(
         color: recording
             ? theme.colorScheme.error
             : theme.colorScheme.primary,
         child: InkWell(
-          onTap: _toggleRecording,
+          // Blocked while the finished recording is still being analyzed.
+          onTap: analyzing ? null : _toggleRecording,
           child: SizedBox(
             width: 64,
             height: 64,

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:echo_scribe/asr/transcript_segment.dart';
 import 'package:echo_scribe/library/recordings_repository.dart';
 
 void main() {
@@ -85,5 +86,75 @@ void main() {
     expect(await repo.list(), isEmpty);
     expect(await File('${tmp.path}/rec-a.wav').exists(), isFalse);
     expect(await File('${tmp.path}/rec-a.json').exists(), isFalse);
+  });
+
+  test('list reads speaker-labeled segments', () async {
+    await writeRecording('rec-talk', transcript: '你好再见');
+    await File('${tmp.path}/rec-talk.json').writeAsString(
+      '{"title": "rec-talk", "createdAt": "${DateTime(2026, 1, 1).toIso8601String()}",'
+      ' "durationMs": 8000, "transcript": "你好再见", "speakerCount": 2,'
+      ' "segments": ['
+      '{"text": "你好", "start": 0.0, "end": 2.5, "speaker": 0},'
+      '{"text": "再见", "start": 2.5, "end": 4.0, "speaker": 1}]}',
+    );
+
+    final item = (await repo.list()).single;
+    expect(item.speakerCount, 2);
+    expect(item.segments, hasLength(2));
+    expect(item.segments.first.speaker, 0);
+    expect(item.segments.last.endSec, 4.0);
+    expect(item.displayTranscript, '说话人1：你好\n说话人2：再见');
+  });
+
+  test('sidecars without segments fall back to plain transcript', () async {
+    await writeRecording('rec-legacy', transcript: '旧录音');
+    final item = (await repo.list()).single;
+
+    expect(item.segments, isEmpty);
+    expect(item.speakerCount, 0);
+    expect(item.displayTranscript, '旧录音');
+  });
+
+  test('rename preserves segments through sidecar rewrite', () async {
+    await writeRecording('rec-talk', transcript: '你好');
+    await File('${tmp.path}/rec-talk.json').writeAsString(
+      '{"title": "rec-talk", "createdAt": "${DateTime(2026, 1, 1).toIso8601String()}",'
+      ' "durationMs": 5000, "transcript": "你好", "speakerCount": 1,'
+      ' "segments": [{"text": "你好", "start": 0.0, "end": 1.5, "speaker": 0}]}',
+    );
+    final item = (await repo.list()).single;
+
+    await repo.rename(item, '周会');
+    final reloaded = (await repo.list()).single;
+
+    expect(reloaded.title, '周会');
+    expect(reloaded.speakerCount, 1);
+    expect(reloaded.segments.single.text, '你好');
+  });
+
+  test('updateSegments rewrites attribution and keeps other metadata',
+      () async {
+    await writeRecording('rec-fix', transcript: '你好再见');
+    final item = (await repo.list()).single;
+
+    final segments = [
+      TranscriptSegment(text: '你好', startSec: 0, endSec: 2)..speaker = 0,
+      TranscriptSegment(text: '再见', startSec: 2.1, endSec: 4)..speaker = 1,
+    ];
+    await repo.updateSegments(
+      item,
+      segments,
+      2,
+      [
+        {'start': 0.0, 'end': 2.0, 'speaker': 0},
+        {'start': 2.1, 'end': 4.0, 'speaker': 1},
+      ],
+    );
+
+    final reloaded = (await repo.list()).single;
+    expect(reloaded.title, 'rec-fix');
+    expect(reloaded.speakerCount, 2);
+    expect(reloaded.segments.last.speaker, 1);
+    expect(reloaded.displayTranscript, '说话人1：你好\n说话人2：再见');
   });
 }

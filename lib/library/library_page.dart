@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../asr/diarizer.dart';
+import '../asr/transcript_segment.dart';
 import 'recordings_repository.dart';
 import '../utils/format.dart';
 
@@ -19,6 +21,8 @@ class LibraryPageState extends State<LibraryPage> {
   RecordingsRepository? _repo;
   List<Recording> _items = [];
   bool _loading = true;
+  SpeakerDiarizer? _diarizer;
+  bool _reanalyzing = false;
 
   @override
   void initState() {
@@ -98,7 +102,82 @@ class LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Re-runs speaker diarization on a saved recording with an optionally
+  /// forced speaker count, so a wrong attribution can be fixed without
+  /// re-recording.
+  Future<void> _reanalyze(Recording recording) async {
+    if (_reanalyzing) return;
+    if (recording.segments.isEmpty) {
+      _snack('该录音缺少分段信息，无法重新分析');
+      return;
+    }
+    final count = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('重新分析说话人'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Text('指定人数通常比自动检测更准确'),
+          ),
+          const SizedBox(height: 8),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 0),
+            child: const Text('自动检测人数'),
+          ),
+          for (final n in const [2, 3, 4, 5, 6, 7, 8, 9, 10])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, n),
+              child: Text('按 $n 人分析'),
+            ),
+        ],
+      ),
+    );
+    if (count == null || !mounted) return;
+
+    _reanalyzing = true;
+    _snack('正在重新分析说话人…');
+    try {
+      _diarizer ??= await SpeakerDiarizer.create();
+      final turns =
+          await _diarizer!.analyze(recording.wavPath, numClusters: count);
+      // Re-split stored segments at sentence punctuation so recordings made
+      // before the split logic get sentence-granular attribution too.
+      final segments = [
+        for (final segment in recording.segments) ...splitAtSentenceEnds(segment),
+      ];
+      final speakerCount = attributeSpeakers(segments, turns);
+      await _repo!.updateSegments(
+        recording,
+        segments,
+        speakerCount,
+        [for (final turn in turns) turn.toJson()],
+      );
+      await refresh();
+      if (mounted) {
+        final clusters = turns.map((turn) => turn.speaker).toSet().length;
+        if (clusters > speakerCount) {
+          _snack('已聚成 $clusters 类，$speakerCount 位说话人实际落到句子上'
+              '（人数可能设置偏多，可换个数字重试）');
+        } else {
+          _snack('分析完成：识别到 $speakerCount 位说话人');
+        }
+      }
+    } catch (e) {
+      if (mounted) _snack('重新分析失败：$e');
+    } finally {
+      _reanalyzing = false;
+    }
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   void _showTranscript(Recording recording) {
+    final text = recording.displayTranscript;
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -107,7 +186,7 @@ class LibraryPageState extends State<LibraryPage> {
           width: 480,
           child: SingleChildScrollView(
             child: SelectableText(
-              recording.transcript.isEmpty ? '（无转写内容）' : recording.transcript,
+              text.isEmpty ? '（无转写内容）' : text,
               style: const TextStyle(fontSize: 15, height: 1.7),
             ),
           ),
@@ -115,7 +194,7 @@ class LibraryPageState extends State<LibraryPage> {
         actions: [
           TextButton(
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: recording.transcript));
+              Clipboard.setData(ClipboardData(text: text));
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('转写已复制到剪贴板')),
               );
@@ -180,6 +259,8 @@ class LibraryPageState extends State<LibraryPage> {
                           switch (action) {
                             case 'rename':
                               _showRenameDialog(item);
+                            case 'reanalyze':
+                              _reanalyze(item);
                             case 'delete':
                               _confirmDelete(item);
                           }
@@ -190,6 +271,15 @@ class LibraryPageState extends State<LibraryPage> {
                             child: ListTile(
                               leading: Icon(Icons.edit),
                               title: Text('重命名'),
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'reanalyze',
+                            child: ListTile(
+                              leading: Icon(Icons.groups),
+                              title: Text('重新分析说话人'),
                               contentPadding: EdgeInsets.zero,
                               dense: true,
                             ),
