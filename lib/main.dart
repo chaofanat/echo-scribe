@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'asr/recognizer.dart';
 import 'asr/recording_session.dart';
+import 'library/library_page.dart';
+import 'utils/format.dart';
 
 void main() {
   runApp(const EchoScribeApp());
@@ -19,19 +21,57 @@ class EchoScribeApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: const HomeShell(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+/// Bottom-navigation shell hosting the recorder and the library tabs.
+class HomeShell extends StatefulWidget {
+  const HomeShell({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomeShellState extends State<HomeShell> {
+  int _tab = 0;
+  final _libraryKey = GlobalKey<LibraryPageState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _tab,
+        children: [
+          const RecorderPage(),
+          LibraryPage(key: _libraryKey),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (index) {
+          setState(() => _tab = index);
+          // Pick up recordings saved since the library was last visible.
+          if (index == 1) _libraryKey.currentState?.refresh();
+        },
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.mic), label: '录音'),
+          NavigationDestination(icon: Icon(Icons.library_music), label: '录音库'),
+        ],
+      ),
+    );
+  }
+}
+
+class RecorderPage extends StatefulWidget {
+  const RecorderPage({super.key});
+
+  @override
+  State<RecorderPage> createState() => _RecorderPageState();
+}
+
+class _RecorderPageState extends State<RecorderPage> {
   StreamingRecognizer? _recognizer;
   bool _loadingRecognizer = false;
   RecordingSession? _session;
@@ -45,8 +85,7 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  bool get _isRecording =>
-      _session?.status == SessionStatus.recording;
+  bool get _isRecording => _session?.status == SessionStatus.recording;
 
   Future<void> _toggleRecording() async {
     final session = _session;
@@ -113,14 +152,6 @@ class _HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  String _fmtDuration(Duration d) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    final h = d.inHours;
-    return h > 0
-        ? '$h:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}'
-        : '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
   }
 
   @override
@@ -196,7 +227,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(width: 8),
           Text(
             recording
-                ? '录音中 ${_fmtDuration(session!.elapsed)}'
+                ? '录音中 ${formatDuration(session!.elapsed)}'
                 : '未在录音',
             style: TextStyle(
               color: recording ? theme.colorScheme.error : theme.colorScheme.outline,

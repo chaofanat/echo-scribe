@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -31,6 +32,7 @@ class RecordingSession extends ChangeNotifier {
   Timer? _ticker;
   RandomAccessFile? _wav;
   String? _wavPath;
+  DateTime? _startedAt;
   int _pcmBytes = 0;
 
   /// Full transcript: finalized segments joined, plus the trailing partial.
@@ -53,6 +55,7 @@ class RecordingSession extends ChangeNotifier {
         '${now.year}${_two(now.month)}${_two(now.day)}-${_two(now.hour)}'
         '${_two(now.minute)}${_two(now.second)}';
     _wavPath = p.join(recordingsDir, 'rec-$stamp.wav');
+    _startedAt = now;
 
     final file = File(_wavPath!);
     _wav = await file.open(mode: FileMode.write);
@@ -112,6 +115,20 @@ class RecordingSession extends ChangeNotifier {
       await wav.close();
       _wav = null;
       savedFile = _wavPath;
+
+      // Sidecar metadata so the recording shows up in the library.
+      final wavPath = _wavPath!;
+      final stem = p.basenameWithoutExtension(wavPath);
+      final sidecar =
+          File(p.join(p.dirname(wavPath), '$stem.json'));
+      await sidecar.writeAsString(
+        const JsonEncoder.withIndent('  ').convert({
+          'title': stem,
+          'createdAt': _startedAt!.toIso8601String(),
+          'durationMs': DateTime.now().difference(_startedAt!).inMilliseconds,
+          'transcript': segments.join(),
+        }),
+      );
     }
 
     _recognizer.resetStream();

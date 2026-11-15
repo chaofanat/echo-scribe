@@ -45,7 +45,7 @@ flutter run -d windows    # Windows 桌面
 # Android：安装 Android SDK / JDK 后 flutter run -d <device-id>
 ```
 
-- 录音文件保存在 `文档\EchoScribe\recordings\`（16kHz 单声道 WAV）
+- 录音文件保存在 `文档\EchoScribe\recordings\`（16kHz 单声道 WAV + 同名 `.json` 元数据）
 - 首次点击录音按钮会加载模型（数秒），之后复用
 - 模型以 asset 打包进应用，运行时拷贝到应用数据目录使用
 
@@ -53,7 +53,7 @@ flutter run -d windows    # Windows 桌面
 
 - [x] MVP：录音 + 流式转写上屏（partial/final）
 - [x] 句尾定稿 + 标点（模型自带标点输出）
-- [ ] 录音库管理（列表、重命名、删除）
+- [x] 录音库管理（列表、查看全文、重命名、删除；转写以同名 `.json` sidecar 持久化）
 - [ ] 说话人分轨
 - [ ] 标签 / 文件夹 / 全文检索
 - [ ] 文件导入转写
