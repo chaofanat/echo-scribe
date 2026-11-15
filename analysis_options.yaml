@@ -14,6 +14,8 @@ analyzer:
     - build/**
     - android/**
     - windows/**
+    # Vendored fork of audio_io; upstream style, not ours to lint.
+    - third_party/**
 
 linter:
   # The lint rules applied to this project can be customized in the

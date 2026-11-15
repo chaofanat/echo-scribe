@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'asr/capture_source.dart';
 import 'asr/diarizer.dart';
 import 'asr/recognizer.dart';
 import 'asr/recording_session.dart';
@@ -81,6 +84,10 @@ class _RecorderPageState extends State<RecorderPage> {
 
   /// Speaker-count hint for diarization clustering: 0 = auto.
   int _expectedSpeakers = 0;
+
+  /// Capture device for the next recording; system audio is Windows-only
+  /// (WASAPI loopback).
+  AudioSource _source = AudioSource.microphone;
   bool _wasDiarizing = false;
 
   @override
@@ -129,7 +136,8 @@ class _RecorderPageState extends State<RecorderPage> {
       if (_recognizer == null) return;
     }
     await _startSession(
-        RecordingSession(_recognizer!, _diarizer, _expectedSpeakers));
+      RecordingSession(_recognizer!, _diarizer, _expectedSpeakers, _source),
+    );
   }
 
   Future<void> _startSession(RecordingSession session) async {
@@ -154,8 +162,10 @@ class _RecorderPageState extends State<RecorderPage> {
         _snack(error);
       } else if (session.speakerCount > 1) {
         if (session.speakerClusters > session.speakerCount) {
-          _snack('已聚成 ${session.speakerClusters} 类，${session.speakerCount} 位说话人实际落到句子上'
-              '（人数可能设置偏多，可重新分析调整）');
+          _snack(
+            '已聚成 ${session.speakerClusters} 类，${session.speakerCount} 位说话人实际落到句子上'
+            '（人数可能设置偏多，可重新分析调整）',
+          );
         } else {
           _snack('已识别到 ${session.speakerCount} 位说话人');
         }
@@ -190,6 +200,21 @@ class _RecorderPageState extends State<RecorderPage> {
         child: Text(label),
       );
 
+  /// Switches the capture device used by the next recording. Blocked while
+  /// recording so a session never mixes two devices.
+  void _selectSource(String value) {
+    if (_isRecording) {
+      _snack('录音中无法切换音源，请先停止录音');
+      return;
+    }
+    final source = AudioSource.fromId(value);
+    if (source == _source) return;
+    setState(() => _source = source);
+    // The session object outlives a recording (its transcript stays on
+    // screen); it reads [RecordingSession.source] when starting.
+    _session?.source = source;
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -206,6 +231,28 @@ class _RecorderPageState extends State<RecorderPage> {
       appBar: AppBar(
         title: const Text('EchoScribe'),
         actions: [
+          if (Platform.isWindows)
+            PopupMenuButton<String>(
+              tooltip: '录音来源',
+              icon: Icon(
+                _source == AudioSource.systemAudio
+                    ? Icons.volume_up
+                    : Icons.mic,
+              ),
+              onSelected: _selectSource,
+              itemBuilder: (_) => [
+                CheckedPopupMenuItem(
+                  value: AudioSource.microphone.id,
+                  checked: _source == AudioSource.microphone,
+                  child: const Text('麦克风'),
+                ),
+                CheckedPopupMenuItem(
+                  value: AudioSource.systemAudio.id,
+                  checked: _source == AudioSource.systemAudio,
+                  child: const Text('系统声音（内录）'),
+                ),
+              ],
+            ),
           PopupMenuButton<String>(
             tooltip: '说话人数',
             icon: const Icon(Icons.groups),
@@ -231,7 +278,7 @@ class _RecorderPageState extends State<RecorderPage> {
           Expanded(
             child: !hasTranscript && !_isRecording
                 ? _emptyHint(theme)
-                  : ListView(
+                : ListView(
                     controller: _scroll,
                     padding: const EdgeInsets.all(16),
                     children: [
@@ -266,7 +313,8 @@ class _RecorderPageState extends State<RecorderPage> {
   Widget _segmentText(RecordingSession session, int index) {
     final segment = session.segments[index];
     final speaker = segment.speaker;
-    final startsTurn = session.speakerCount > 1 &&
+    final startsTurn =
+        session.speakerCount > 1 &&
         speaker != null &&
         (index == 0 || session.segments[index - 1].speaker != speaker);
     if (!startsTurn) {
@@ -277,16 +325,18 @@ class _RecorderPageState extends State<RecorderPage> {
     }
     final theme = Theme.of(context);
     return Text.rich(
-      TextSpan(children: [
-        TextSpan(
-          text: '说话人${speaker + 1}　',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: theme.colorScheme.primary,
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '说话人${speaker + 1}　',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.primary,
+            ),
           ),
-        ),
-        TextSpan(text: segment.text),
-      ]),
+          TextSpan(text: segment.text),
+        ],
+      ),
       style: const TextStyle(fontSize: 17, height: 1.7),
     );
   }
@@ -294,36 +344,39 @@ class _RecorderPageState extends State<RecorderPage> {
   Widget _statusRow(ThemeData theme, RecordingSession? session) {
     final recording = session?.status == SessionStatus.recording;
     final analyzing = session?.diarizing == true;
+    final loopback = session?.source == AudioSource.systemAudio;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
           Icon(
             recording
-                ? Icons.fiber_manual_record
+                ? (loopback ? Icons.volume_up : Icons.fiber_manual_record)
                 : analyzing
-                    ? Icons.groups
-                    : Icons.mic_off,
+                ? Icons.groups
+                : Icons.mic_off,
             size: 16,
             color: recording
                 ? theme.colorScheme.error
                 : analyzing
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.outline,
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outline,
           ),
           const SizedBox(width: 8),
           Text(
             recording
-                ? '录音中 ${formatDuration(session!.elapsed)}'
+                ? (loopback
+                      ? '内录系统声音中 ${formatDuration(session!.elapsed)}'
+                      : '录音中 ${formatDuration(session!.elapsed)}')
                 : analyzing
-                    ? '正在分析说话人…'
-                    : '未在录音',
+                ? '正在分析说话人…'
+                : '未在录音',
             style: TextStyle(
               color: recording
                   ? theme.colorScheme.error
                   : analyzing
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.outline,
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outline,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -351,7 +404,11 @@ class _RecorderPageState extends State<RecorderPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.graphic_eq, size: 56, color: theme.colorScheme.outlineVariant),
+          Icon(
+            Icons.graphic_eq,
+            size: 56,
+            color: theme.colorScheme.outlineVariant,
+          ),
           const SizedBox(height: 12),
           Text(
             _loadingRecognizer ? '正在加载模型…' : '点击下方按钮开始录音',
@@ -374,19 +431,24 @@ class _RecorderPageState extends State<RecorderPage> {
     final analyzing = _session?.diarizing == true;
     return ClipOval(
       child: Material(
-        color: recording
-            ? theme.colorScheme.error
-            : theme.colorScheme.primary,
-        child: InkWell(
-          // Blocked while the finished recording is still being analyzed.
-          onTap: analyzing ? null : _toggleRecording,
-          child: SizedBox(
-            width: 64,
-            height: 64,
-            child: Icon(
-              recording ? Icons.stop : Icons.mic,
-              color: theme.colorScheme.onPrimary,
-              size: 30,
+        color: recording ? theme.colorScheme.error : theme.colorScheme.primary,
+        child: Semantics(
+          button: true,
+          label: recording ? '停止录音' : '开始录音',
+          child: Tooltip(
+            message: recording ? '停止录音' : '开始录音',
+            child: InkWell(
+              // Blocked while the finished recording is still being analyzed.
+              onTap: analyzing ? null : _toggleRecording,
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: Icon(
+                  recording ? Icons.stop : Icons.mic,
+                  color: theme.colorScheme.onPrimary,
+                  size: 30,
+                ),
+              ),
             ),
           ),
         ),

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../asr/capture_source.dart';
 import '../asr/diarizer.dart';
 import '../asr/transcript_segment.dart';
 import 'recordings_repository.dart';
@@ -249,6 +250,7 @@ class LibraryPageState extends State<LibraryPage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
+                        '${item.source == AudioSource.systemAudio ? '内录 · ' : ''}'
                         '${_fmtDate(item.createdAt)} · ${formatDuration(item.duration)} · $summary',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:audio_io/audio_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import 'capture_source.dart';
 import 'diarizer.dart';
 import 'recognizer.dart';
 import 'transcript_segment.dart';
@@ -20,7 +22,8 @@ enum SessionStatus { idle, recording }
 /// across sessions. An optional [diarizer] enables speaker labeling, which
 /// runs asynchronously after the recording stops.
 class RecordingSession extends ChangeNotifier {
-  RecordingSession(this._recognizer, [this._diarizer, this.expectedSpeakers = 0]);
+  RecordingSession(this._recognizer,
+      [this._diarizer, this.expectedSpeakers = 0, this.source = AudioSource.microphone]);
 
   final StreamingRecognizer _recognizer;
   final SpeakerDiarizer? _diarizer;
@@ -29,6 +32,11 @@ class RecordingSession extends ChangeNotifier {
   /// forces N speakers (recommended when the count is known — auto mode
   /// tends to merge similar voices into one cluster).
   final int expectedSpeakers;
+
+  /// Capture device for the next recording. Mutable so a kept-alive session
+  /// (whose transcript stays on screen) can be reused after switching the
+  /// source in the UI; only read in [start].
+  AudioSource source;
 
   SessionStatus status = SessionStatus.idle;
   String partial = '';
@@ -61,6 +69,7 @@ class RecordingSession extends ChangeNotifier {
   DateTime? _startedAt;
   int _pcmBytes = 0;
   bool _disposed = false;
+  bool _systemAudioStarted = false;
   Duration _recordedDuration = Duration.zero;
 
   /// Full transcript: finalized segments joined, plus the trailing partial.
@@ -75,11 +84,9 @@ class RecordingSession extends ChangeNotifier {
   Future<void> start() async {
     if (status == SessionStatus.recording) return;
 
-    final recorder = AudioRecorder();
-    if (!await recorder.hasPermission()) {
-      recorder.dispose();
-      throw Exception('未获得麦克风权限');
-    }
+    // Both sources deliver 16 kHz mono PCM16 bytes, so everything downstream
+    // (WAV sink, recognizer, diarization) is shared.
+    final stream = await _openCapture();
 
     final dir = await getApplicationDocumentsDirectory();
     final recordingsDir = p.join(dir.path, 'EchoScribe', 'recordings');
@@ -105,21 +112,59 @@ class RecordingSession extends ChangeNotifier {
     speakerClusters = 0;
     diarizeError = null;
     speakerTurns = const [];
-    _recorder = recorder;
     status = SessionStatus.recording;
     notifyListeners();
 
-    const config = RecordConfig(
-      encoder: AudioEncoder.pcm16bits,
-      sampleRate: 16000,
-      numChannels: 1,
-    );
-    final stream = await recorder.startStream(config);
     _audioSub = stream.listen(_onAudio, onError: (Object e) => debugPrint('record stream error: $e'));
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsed += const Duration(seconds: 1);
       notifyListeners();
     });
+  }
+
+  /// Opens the configured capture source and returns its PCM16 byte stream.
+  Future<Stream<Uint8List>> _openCapture() async {
+    if (source == AudioSource.systemAudio) {
+      try {
+        await AudioIo.instance.startWith(const AudioIoConfig(
+          inputSource: AudioIoInputSource.systemAudio,
+          format: AudioIoFormat.pcm16,
+          sampleRate: AudioIoSampleRate.rate16000,
+        ));
+      } on AudioIoException catch (e) {
+        if (e.isSystemAudioUnsupported) {
+          throw Exception('系统声音采集不可用：请检查音频输出设备');
+        }
+        throw Exception('系统声音采集启动失败：${e.message}');
+      }
+      _systemAudioStarted = true;
+      return AudioIo.instance.inputBytes;
+    }
+
+    final recorder = AudioRecorder();
+    if (!await recorder.hasPermission()) {
+      recorder.dispose();
+      throw Exception('未获得麦克风权限');
+    }
+    _recorder = recorder;
+    const config = RecordConfig(
+      encoder: AudioEncoder.pcm16bits,
+      sampleRate: 16000,
+      numChannels: 1,
+    );
+    return recorder.startStream(config);
+  }
+
+  /// Releases whichever capture device [start] opened.
+  Future<void> _closeCapture() async {
+    if (_recorder != null) {
+      await _recorder!.stop();
+      await _recorder!.dispose();
+      _recorder = null;
+    } else if (_systemAudioStarted) {
+      _systemAudioStarted = false;
+      await AudioIo.instance.stop();
+    }
   }
 
   Future<void> stop() async {
@@ -130,9 +175,7 @@ class RecordingSession extends ChangeNotifier {
     _audioSub = null;
     _ticker?.cancel();
     _ticker = null;
-    await _recorder?.stop();
-    _recorder?.dispose();
-    _recorder = null;
+    await _closeCapture();
 
     // Flush the recognizer so the last (not yet finalized) segment lands in
     // the transcript too.
@@ -207,6 +250,7 @@ class RecordingSession extends ChangeNotifier {
         'transcript': segments.map((segment) => segment.text).join(),
         'segments': [for (final segment in segments) segment.toJson()],
         'speakerCount': speakerCount,
+        'source': source.id,
         // Raw diarization output, kept for diagnostics/re-analysis.
         'speakerTurns': [for (final turn in speakerTurns) turn.toJson()],
       }),

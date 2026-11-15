@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../asr/capture_source.dart';
 import '../asr/transcript_segment.dart';
 
 /// A saved recording: a WAV file plus a sidecar `.json` file (same stem)
@@ -17,6 +18,7 @@ class Recording {
     required this.transcript,
     this.segments = const [],
     this.speakerCount = 0,
+    this.source = AudioSource.microphone,
   });
 
   final String wavPath;
@@ -25,6 +27,10 @@ class Recording {
   final DateTime createdAt;
   final Duration duration;
   final String transcript;
+
+  /// Whether this recording came from the microphone or system-audio
+  /// loopback; microphone for recordings predating the field.
+  final AudioSource source;
 
   /// Time-spans and speaker attribution per finalized segment; empty for
   /// recordings made before diarization (or when it failed).
@@ -53,6 +59,7 @@ class Recording {
         'transcript': transcript,
         'segments': [for (final segment in segments) segment.toJson()],
         'speakerCount': speakerCount,
+        'source': source.id,
       };
 
   static Recording fromJson(String wavPath, Map<String, Object?> json) =>
@@ -67,6 +74,7 @@ class Recording {
         transcript: json['transcript'] as String? ?? '',
         segments: parseSegments(json['segments']),
         speakerCount: json['speakerCount'] as int? ?? 0,
+        source: AudioSource.fromId(json['source'] as String?),
       );
 }
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:echo_scribe/asr/capture_source.dart';
 import 'package:echo_scribe/asr/transcript_segment.dart';
 import 'package:echo_scribe/library/recordings_repository.dart';
 
@@ -113,6 +114,25 @@ void main() {
     expect(item.segments, isEmpty);
     expect(item.speakerCount, 0);
     expect(item.displayTranscript, '旧录音');
+  });
+
+  test('capture source round-trips through the sidecar', () async {
+    await writeRecording('rec-loopback', transcript: '视频讲解');
+    await File('${tmp.path}/rec-loopback.json').writeAsString(
+      '{"title": "rec-loopback", "createdAt": "${DateTime(2026, 1, 1).toIso8601String()}",'
+      ' "durationMs": 5000, "transcript": "视频讲解", "source": "system"}',
+    );
+    await writeRecording('rec-mic', transcript: '你好');
+
+    final items = await repo.list();
+    final loopback = items.firstWhere((r) => r.title == 'rec-loopback');
+    expect(loopback.source, AudioSource.systemAudio);
+    expect(loopback.toJson()['source'], 'system');
+
+    // Older sidecars (and fresh mic recordings) read as microphone.
+    final mic = items.firstWhere((r) => r.title == 'rec-mic');
+    expect(mic.source, AudioSource.microphone);
+    expect(mic.toJson()['source'], 'mic');
   });
 
   test('rename preserves segments through sidecar rewrite', () async {

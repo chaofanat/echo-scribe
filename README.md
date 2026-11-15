@@ -12,11 +12,13 @@
   - 说话人分轨：pyannote segmentation + 3D-Speaker CAM++ zh-en 声纹 embedding（离线非流式，录音停止后后台 isolate 运行，约 34MB；支持指定人数聚类与对已有录音重新分析）
   - 规划能力：SenseVoice 文件转写、silero-vad、GTCRN 降噪
 - **麦克风采集**：`record` 包（16kHz 单声道 PCM16 流）
+- **系统声音 / 内录**：`audio_io`（WASAPI loopback，同样输出 16kHz 单声道 PCM16，与麦克风共用同一转写管线）
+  - 本仓库内置打过补丁的 fork（`third_party/audio_io`）：上游 0.6.1 用 VAD Process_Loopback 排除自身进程，该激活方式在部分机器上失败；EchoScribe 不播放音频，无自排除需求，fork 改用普通 endpoint loopback（Win10/Win11 均可用）。上游提供选项后可移除该 override
 
 ## MVP 数据流
 
 ```
-record (16k mono PCM16 stream)
+麦克风 record / 系统声音 audio_io loopback（均为 16k mono PCM16 stream）
  ├─→ WAV 落盘（边录边写，停止时回填 RIFF 头长度）
  └─→ Float32 → sherpa_onnx OnlineRecognizer
        ├─ getResult   → partial 实时上屏（灰色斜体）
@@ -60,6 +62,6 @@ flutter run -d windows    # Windows 桌面
 - [x] 句尾定稿 + 标点（模型自带标点输出）
 - [x] 录音库管理（列表、查看全文、重命名、删除；转写以同名 `.json` sidecar 持久化）
 - [x] 说话人分轨（录音停止后自动后台分析；定稿按句尾标点切句后逐句归属说话人；支持指定人数聚类（自动检测在声线相近时易合并）与对已有录音重新分析，不用重录）
-- [ ] 系统声音 / 内录采集（WASAPI loopback 采集系统输出，转写视频/会议不再经过扬声器与房间混响，声纹区分度显著更好）
+- [x] 系统声音 / 内录采集（WASAPI loopback 直采系统输出，转写视频/会议不再经过扬声器与房间混响，声纹区分度显著更好；录音页可切换 麦克风/系统声音，来源记入 sidecar 并在录音库标记「内录」）
 - [ ] 标签 / 文件夹 / 全文检索
 - [ ] 文件导入转写

@@ -37,8 +37,9 @@ void main() {
 
     expect(find.text('EchoScribe'), findsOneWidget);
     expect(find.text('点击下方按钮开始录音'), findsOneWidget);
-    // NavigationBar tab icon + the record button.
-    expect(find.byIcon(Icons.mic), findsNWidgets(2));
+    // NavigationBar tab icon, the record button and (on Windows) the
+    // source picker, which shows a mic while the source is the microphone.
+    expect(find.byIcon(Icons.mic), findsNWidgets(3));
   });
 
   testWidgets('library tab lists saved recordings', (tester) async {
