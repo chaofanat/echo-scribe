@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -5,7 +6,9 @@ import 'package:path_provider/path_provider.dart';
 
 import '../asr/capture_source.dart';
 import '../asr/diarizer.dart';
+import '../asr/model_config.dart';
 import '../asr/transcript_segment.dart';
+import '../import/file_importer.dart';
 import 'recording_filter.dart';
 import 'recordings_repository.dart';
 import '../utils/format.dart';
@@ -32,6 +35,9 @@ class LibraryPageState extends State<LibraryPage> {
 
   /// Active tag filter; null shows all recordings.
   String? _activeTag;
+
+  bool _importing = false;
+  double _importProgress = 0;
 
   @override
   void initState() {
@@ -271,6 +277,92 @@ class LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Picks an audio file (WAV/MP3/FLAC), transcribes it into the library
+  /// and runs speaker diarization on the result.
+  Future<void> _importFile() async {
+    if (_importing || _repo == null) return;
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['wav', 'mp3', 'flac'],
+    );
+    final sourcePath = picked?.files.single.path;
+    if (sourcePath == null) return;
+
+    setState(() {
+      _importing = true;
+      _importProgress = 0;
+    });
+    try {
+      final modelFiles = await extractBundledAsrModel();
+      final doc = await getApplicationDocumentsDirectory();
+      final stem = p.basenameWithoutExtension(sourcePath);
+      final now = DateTime.now();
+      final stamp = '${now.year}${_two(now.month)}${_two(now.day)}-'
+          '${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
+      final wavPath = p.join(
+          doc.path, 'EchoScribe', 'recordings', 'import-$stem-$stamp.wav');
+
+      final importer = FileImporter(modelFiles);
+      final result = await importer.importFile(
+        sourcePath,
+        wavPath,
+        onProgress: (progress) {
+          if (mounted) setState(() => _importProgress = progress);
+        },
+      );
+
+      final segments = [
+        for (final utterance in result.utterances)
+          ...splitAtSentenceEnds(TranscriptSegment(
+            text: utterance.text,
+            startSec: utterance.startSec,
+            endSec: utterance.endSec,
+          )),
+      ];
+      final recording = await _repo!.saveImported(
+        wavPath: result.wavPath,
+        title: stem,
+        createdAt: now,
+        duration: result.duration,
+        transcript: segments.map((segment) => segment.text).join(),
+        segments: segments,
+      );
+      await refresh();
+
+      // Same auto-diarization as a live recording; failure is non-fatal.
+      String? diarizeError;
+      var speakerCount = 0;
+      try {
+        _diarizer ??= await SpeakerDiarizer.create();
+        final turns = await _diarizer!.analyze(result.wavPath);
+        if (turns.isNotEmpty) {
+          speakerCount = attributeSpeakers(segments, turns);
+          await _repo!.updateSegments(
+            recording,
+            segments,
+            speakerCount,
+            [for (final turn in turns) turn.toJson()],
+          );
+          await refresh();
+        }
+      } catch (e) {
+        diarizeError = '$e';
+      }
+      if (!mounted) return;
+      if (diarizeError != null) {
+        _snack('导入完成，说话人分析失败：$diarizeError');
+      } else if (speakerCount > 1) {
+        _snack('导入完成：${segments.length} 段，识别到 $speakerCount 位说话人');
+      } else {
+        _snack('导入完成：${segments.length} 段');
+      }
+    } catch (e) {
+      if (mounted) _snack('导入失败：$e');
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   void _closeSearch() {
     _searchController.clear();
     setState(() {
@@ -340,6 +432,11 @@ class LibraryPageState extends State<LibraryPage> {
               )
             : const Text('录音库'),
         actions: [
+          IconButton(
+            tooltip: '导入音频转写',
+            icon: const Icon(Icons.file_open),
+            onPressed: _importing ? null : _importFile,
+          ),
           if (_searching)
             IconButton(
               tooltip: '关闭搜索',
@@ -360,6 +457,10 @@ class LibraryPageState extends State<LibraryPage> {
               ? _emptyHint(theme, Icons.library_music, '还没有录音，去录一条吧')
               : Column(
                   children: [
+                    if (_importing)
+                      LinearProgressIndicator(
+                        value: _importProgress <= 0 ? null : _importProgress,
+                      ),
                     if (tags.isNotEmpty) ...[
                       _tagFilterRow(theme, tags),
                       const Divider(height: 1),
@@ -389,7 +490,7 @@ class LibraryPageState extends State<LibraryPage> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '${item.source == AudioSource.systemAudio ? '内录 · ' : ''}'
+                                        '${_sourcePrefix(item.source)}'
                                         '${_fmtDate(item.createdAt)} · ${formatDuration(item.duration)} · $summary',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -516,7 +617,15 @@ class LibraryPageState extends State<LibraryPage> {
     );
   }
 
+  static String _sourcePrefix(AudioSource source) => switch (source) {
+        AudioSource.microphone => '',
+        AudioSource.systemAudio => '内录 · ',
+        AudioSource.imported => '导入 · ',
+      };
+
   static String _fmtDate(DateTime t) =>
       '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
 }

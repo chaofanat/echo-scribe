@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  audio_decoder
   audio_io
   jni
   sherpa_onnx_windows

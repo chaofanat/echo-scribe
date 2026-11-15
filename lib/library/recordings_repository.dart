@@ -125,6 +125,31 @@ class RecordingsRepository {
     return recordings;
   }
 
+  /// Persists an imported (file-transcribed) recording: writes the sidecar
+  /// next to the already-written WAV and returns the new entry.
+  Future<Recording> saveImported({
+    required String wavPath,
+    required String title,
+    required DateTime createdAt,
+    required Duration duration,
+    required String transcript,
+    required List<TranscriptSegment> segments,
+  }) async {
+    final recording = Recording(
+      wavPath: wavPath,
+      title: title,
+      createdAt: createdAt,
+      duration: duration,
+      transcript: transcript,
+      segments: segments,
+      source: AudioSource.imported,
+    );
+    await File(recording.sidecarPath).writeAsString(
+      const JsonEncoder.withIndent('  ').convert(recording.toJson()),
+    );
+    return recording;
+  }
+
   /// Replaces the recording's tags in the sidecar. Callers reload the list
   /// afterwards ([Recording.tags] is immutable).
   Future<void> updateTags(Recording recording, List<String> tags) async {

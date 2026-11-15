@@ -21,16 +21,49 @@ const pyannoteSegmentationAssetDir =
 const speakerEmbeddingAssetPath =
     'assets/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx';
 
+/// Filesystem locations of the extracted bundled ASR model. Useful for
+/// background isolates (file import), which cannot touch rootBundle but can
+/// build a recognizer config from these paths.
+class AsrModelFiles {
+  const AsrModelFiles({
+    required this.encoder,
+    required this.decoder,
+    required this.joiner,
+    required this.tokens,
+  });
+
+  final String encoder;
+  final String decoder;
+  final String joiner;
+  final String tokens;
+}
+
+/// Extracts the bundled ASR model files out of assets (idempotent) and
+/// returns where they live on disk.
+Future<AsrModelFiles> extractBundledAsrModel() async {
+  return AsrModelFiles(
+    encoder: await copyAssetFile('$bundledModelAssetDir/encoder.int8.onnx'),
+    decoder: await copyAssetFile('$bundledModelAssetDir/decoder.onnx'),
+    joiner: await copyAssetFile('$bundledModelAssetDir/joiner.int8.onnx'),
+    tokens: await copyAssetFile('$bundledModelAssetDir/tokens.txt'),
+  );
+}
+
 /// Loads the bundled model files out of assets and returns the recognizer
 /// model config pointing at the extracted copies.
 Future<sherpa_onnx.OnlineModelConfig> loadBundledModelConfig() async {
+  return asrModelConfig(await extractBundledAsrModel());
+}
+
+/// Builds a recognizer model config from already-extracted model files.
+sherpa_onnx.OnlineModelConfig asrModelConfig(AsrModelFiles files) {
   return sherpa_onnx.OnlineModelConfig(
     transducer: sherpa_onnx.OnlineTransducerModelConfig(
-      encoder: await copyAssetFile('$bundledModelAssetDir/encoder.int8.onnx'),
-      decoder: await copyAssetFile('$bundledModelAssetDir/decoder.onnx'),
-      joiner: await copyAssetFile('$bundledModelAssetDir/joiner.int8.onnx'),
+      encoder: files.encoder,
+      decoder: files.decoder,
+      joiner: files.joiner,
     ),
-    tokens: await copyAssetFile('$bundledModelAssetDir/tokens.txt'),
+    tokens: files.tokens,
     modelType: 'zipformer2',
     debug: false,
   );

@@ -14,6 +14,7 @@
 - **麦克风采集**：`record` 包（16kHz 单声道 PCM16 流）
 - **系统声音 / 内录**：`audio_io`（WASAPI loopback，同样输出 16kHz 单声道 PCM16，与麦克风共用同一转写管线）
   - 本仓库内置打过补丁的 fork（`third_party/audio_io`）：上游 0.6.1 用 VAD Process_Loopback 排除自身进程，该激活方式在部分机器上失败；EchoScribe 不播放音频，无自排除需求，fork 改用普通 endpoint loopback（Win10/Win11 均可用）。上游提供选项后可移除该 override
+- **文件导入转写**：`packages/audio_decoder` 自研插件（miniaudio 解码 WAV/MP3/FLAC → 16kHz 单声道 PCM16），后台 isolate 复用流式识别器整段转写，进度条可视，导入后自动跑说话人分析；m4a/aac 暂不支持（miniaudio 无内置解码器，需先转 WAV/MP3）
 
 ## MVP 数据流
 
@@ -63,5 +64,6 @@ flutter run -d windows    # Windows 桌面
 - [x] 录音库管理（列表、查看全文、重命名、删除；转写以同名 `.json` sidecar 持久化）
 - [x] 说话人分轨（录音停止后自动后台分析；定稿按句尾标点切句后逐句归属说话人；支持指定人数聚类（自动检测在声线相近时易合并）与对已有录音重新分析，不用重录）
 - [x] 系统声音 / 内录采集（WASAPI loopback 直采系统输出，转写视频/会议不再经过扬声器与房间混响，声纹区分度显著更好；录音页可切换 麦克风/系统声音，来源记入 sidecar 并在录音库标记「内录」）
-- [ ] 标签 / 文件夹 / 全文检索
-- [ ] 文件导入转写
+- [x] 标签 / 全文检索（标签存 sidecar，条目菜单编辑、按标签 chips 筛选；标题+转写内容大小写不敏感搜索。文件夹并入标签——同一筛选场景且支持多选）
+- [x] 文件导入转写（录音库「导入音频转写」选择 WAV/MP3/FLAC，后台解码+识别+说话人分析，来源标记「导入」）
+

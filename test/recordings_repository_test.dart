@@ -139,6 +139,28 @@ void main() {
     expect(reloaded.duration, const Duration(seconds: 5));
   });
 
+  test('saveImported writes sidecar with import source and segments',
+      () async {
+    File('${tmp.path}/import-demo.wav').writeAsBytesSync(List.filled(10, 0));
+    final segments = [
+      TranscriptSegment(text: '大家好。', startSec: 0, endSec: 2)..speaker = 0,
+    ];
+    final recording = await repo.saveImported(
+      wavPath: '${tmp.path}/import-demo.wav',
+      title: 'demo',
+      createdAt: DateTime(2026, 2, 1),
+      duration: const Duration(seconds: 5),
+      transcript: '大家好。',
+      segments: segments,
+    );
+
+    expect(recording.source, AudioSource.imported);
+    final reloaded = (await repo.list()).single;
+    expect(reloaded.source, AudioSource.imported);
+    expect(reloaded.title, 'demo');
+    expect(reloaded.segments.single.text, '大家好。');
+  });
+
   test('capture source round-trips through the sidecar', () async {
     await writeRecording('rec-loopback', transcript: '视频讲解');
     await File('${tmp.path}/rec-loopback.json').writeAsString(
