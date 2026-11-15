@@ -1,0 +1,3 @@
+D:/workspace/echo-scribe/packages/audio_decoder/android/.cxx/RelWithDebInfo/1c724z2b/armeabi-v7a/CMakeFiles/audio_decoder.dir
+D:/workspace/echo-scribe/packages/audio_decoder/android/.cxx/RelWithDebInfo/1c724z2b/armeabi-v7a/CMakeFiles/edit_cache.dir
+D:/workspace/echo-scribe/packages/audio_decoder/android/.cxx/RelWithDebInfo/1c724z2b/armeabi-v7a/CMakeFiles/rebuild_cache.dir

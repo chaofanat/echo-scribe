@@ -14,5 +14,7 @@ dependencies:
 flutter:
   plugin:
     platforms:
+      android:
+        ffiPlugin: true
       windows:
         ffiPlugin: true

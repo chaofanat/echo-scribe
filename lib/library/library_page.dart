@@ -281,11 +281,11 @@ class LibraryPageState extends State<LibraryPage> {
   /// and runs speaker diarization on the result.
   Future<void> _importFile() async {
     if (_importing || _repo == null) return;
-    final picked = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['wav', 'mp3', 'flac'],
     );
-    final sourcePath = picked?.files.single.path;
+    final sourcePath = picked?.path;
     if (sourcePath == null) return;
 
     setState(() {

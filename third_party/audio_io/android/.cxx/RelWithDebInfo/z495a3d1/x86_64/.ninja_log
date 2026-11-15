@@ -1,0 +1,3 @@
+# ninja log v5
+0	9246	8164654790677094	CMakeFiles/audio_io.dir/D_/workspace/echo-scribe/third_party/audio_io/src/audio_io_miniaudio.cpp.o	38cd42f589628d2c
+9252	9428	8164654793035646	D:/workspace/echo-scribe/build/audio_io/intermediates/cxx/RelWithDebInfo/z495a3d1/obj/x86_64/libaudio_io.so	37c23cbe3d50e260

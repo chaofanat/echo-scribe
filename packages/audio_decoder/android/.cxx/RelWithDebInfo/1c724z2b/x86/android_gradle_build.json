@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "D:\\workspace\\echo-scribe\\packages\\audio_decoder\\android\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "D:\\software\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "D:\\workspace\\echo-scribe\\packages\\audio_decoder\\android\\.cxx\\RelWithDebInfo\\1c724z2b\\x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "D:\\software\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "D:\\workspace\\echo-scribe\\packages\\audio_decoder\\android\\.cxx\\RelWithDebInfo\\1c724z2b\\x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "audio_decoder::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "x86",
+      "artifactName": "audio_decoder",
+      "output": "D:\\workspace\\echo-scribe\\build\\audio_decoder\\intermediates\\cxx\\RelWithDebInfo\\1c724z2b\\obj\\x86\\libaudio_decoder.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "D:\\software\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "D:\\software\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

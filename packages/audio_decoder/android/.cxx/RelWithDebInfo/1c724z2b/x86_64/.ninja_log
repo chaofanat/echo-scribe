@@ -1,0 +1,3 @@
+# ninja log v5
+0	8722	8164654345825903	CMakeFiles/audio_decoder.dir/D_/workspace/echo-scribe/packages/audio_decoder/src/audio_decoder.cpp.o	cdbe825695d4bdee
+8727	8881	8164654347929228	D:/workspace/echo-scribe/build/audio_decoder/intermediates/cxx/RelWithDebInfo/1c724z2b/obj/x86_64/libaudio_decoder.so	c5ffddb14bd97ddf

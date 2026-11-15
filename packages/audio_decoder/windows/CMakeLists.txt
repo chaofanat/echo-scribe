@@ -11,12 +11,13 @@ add_library(${PLUGIN_NAME} SHARED
 )
 
 # The shared library for miniaudio; its C entry points (ad_decode_file,
-# ad_free_buffer) are resolved via dart:ffi.
+# ad_free_buffer) are resolved via dart:ffi. Sources live in ../src, shared
+# with the Android build.
 add_library(audio_decoder SHARED
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/audio_decoder.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src/audio_decoder.cpp"
 )
 target_include_directories(audio_decoder PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src"
 )
 
 # Apply standard settings

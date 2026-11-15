@@ -23,8 +23,10 @@ apply plugin: 'com.android.library'
 
 android {
     namespace 'com.wearemobilefirst.audio_io'
-    compileSdk 35
-    ndkVersion "27.0.12077973"
+    // Aligned with the host app (EchoScribe): avoids installing a second
+    // NDK/platform just for this fork.
+    compileSdk 36
+    ndkVersion "28.2.13676358"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21

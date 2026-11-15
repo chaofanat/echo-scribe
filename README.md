@@ -4,7 +4,7 @@
 
 ## 技术选型
 
-- **客户端**：Flutter（Windows 桌面 / Android，同一套 Dart 代码）
+- **客户端**：Flutter（Android 手机 / Windows 桌面，同一套 Dart 代码；Android 为主目标）
 - **ASR 引擎**：[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Next-gen Kaldi，Apache-2.0）
   - 通过 pub.dev 官方包 `sherpa_onnx` 集成（各平台自带预编译 onnxruntime，零原生代码）
   - 流式转写：streaming Zipformer（partial → final 定稿机制）
@@ -52,6 +52,18 @@ flutter pub get
 flutter run -d windows    # Windows 桌面
 # Android：安装 Android SDK / JDK 后 flutter run -d <device-id>
 ```
+
+### Android APK
+
+```powershell
+flutter build apk --release --target-platform android-arm64
+# 产物：build\app\outputs\flutter-apk\app-release.apk（约 250MB，模型内置）
+```
+
+- 工具链：JDK 21（`D:\software\jdk-21`）+ Android SDK（`D:\software\Android\Sdk`，platform-36 / build-tools 36 / NDK 28.2.13676358），已通过 `flutter config --android-sdk/--jdk-dir` 持久化
+- Gradle 发行包走腾讯镜像、插件依赖走阿里云镜像（`android/settings.gradle.kts`）；`kotlin.incremental=false` 规避本机 Kotlin 2.4 增量缓存写盘失败
+- Android 端功能：麦克风录音转写、说话人分轨、标签/检索、文件导入转写（`audio_decoder` 以 NDK 编译 miniaudio，WAV/MP3/FLAC）；系统内录为 Windows 专属（WASAPI），Android 上自动隐藏该选项
+- release 当前用 debug 签名（自装可用）；对外发布前需配置正式 keystore
 
 - 录音文件保存在 `文档\EchoScribe\recordings\`（16kHz 单声道 WAV + 同名 `.json` 元数据）
 - 首次点击录音按钮会加载模型（数秒），之后复用

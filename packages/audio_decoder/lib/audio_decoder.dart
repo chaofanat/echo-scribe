@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -30,7 +31,8 @@ Future<Uint8List> decodeToPcm16(String path, {int sampleRate = 16000}) {
 }
 
 Uint8List _decode(String path, int sampleRate) {
-  final lib = DynamicLibrary.open('audio_decoder.dll');
+  final lib = DynamicLibrary.open(
+      Platform.isAndroid ? 'libaudio_decoder.so' : 'audio_decoder.dll');
   final decode = lib.lookupFunction<
       Int32 Function(Pointer<Utf8>, Int32, Pointer<Pointer<Int16>>,
           Pointer<Int64>),
