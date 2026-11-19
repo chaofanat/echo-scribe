@@ -8,6 +8,7 @@ import 'asr/diarizer.dart';
 import 'asr/recognizer.dart';
 import 'asr/recording_session.dart';
 import 'library/library_page.dart';
+import 'platform/background_recording.dart';
 import 'utils/format.dart';
 
 void main() {
@@ -92,6 +93,8 @@ class _RecorderPageState extends State<RecorderPage> {
 
   @override
   void dispose() {
+    // Safety net: never leave the keep-alive service's notification behind.
+    BackgroundRecording.stop();
     _session?.dispose();
     _recognizer?.dispose();
     _scroll.dispose();
@@ -105,6 +108,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (session != null) {
       if (session.status == SessionStatus.recording) {
         await session.stop();
+        await BackgroundRecording.stop();
         if (mounted && session.savedFile != null) {
           _snack('录音已保存');
         }
@@ -147,6 +151,9 @@ class _RecorderPageState extends State<RecorderPage> {
       if (mounted) _snack('无法开始录音：$e');
       return;
     }
+    // Android only: keep capture + recognition running when the app is
+    // backgrounded or the screen turns off.
+    await BackgroundRecording.start();
     session.addListener(_onSessionChanged);
     setState(() => _session = session);
   }
