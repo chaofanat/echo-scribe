@@ -9,6 +9,7 @@ import '../asr/diarizer.dart';
 import '../asr/model_config.dart';
 import '../asr/transcript_segment.dart';
 import '../import/file_importer.dart';
+import 'recording_export.dart';
 import 'recording_filter.dart';
 import 'recordings_repository.dart';
 import '../utils/format.dart';
@@ -363,6 +364,19 @@ class LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Runs an export (share sheet / folder copy) and surfaces the result.
+  Future<void> _export(
+    Recording recording,
+    Future<String> Function(Recording) export,
+  ) async {
+    try {
+      final message = await export(recording);
+      if (mounted) _snack(message);
+    } catch (e) {
+      if (mounted) _snack('导出失败：$e');
+    }
+  }
+
   void _closeSearch() {
     _searchController.clear();
     setState(() {
@@ -514,6 +528,10 @@ class LibraryPageState extends State<LibraryPage> {
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (action) {
                                       switch (action) {
+                                        case 'exportAudio':
+                                          _export(item, exportAudio);
+                                        case 'exportText':
+                                          _export(item, exportTranscript);
                                         case 'rename':
                                           _showRenameDialog(item);
                                         case 'reanalyze':
@@ -525,6 +543,24 @@ class LibraryPageState extends State<LibraryPage> {
                                       }
                                     },
                                     itemBuilder: (context) => const [
+                                      PopupMenuItem(
+                                        value: 'exportAudio',
+                                        child: ListTile(
+                                          leading: Icon(Icons.save_alt),
+                                          title: Text('导出音频'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'exportText',
+                                        child: ListTile(
+                                          leading: Icon(Icons.description),
+                                          title: Text('导出文本'),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ),
                                       PopupMenuItem(
                                         value: 'rename',
                                         child: ListTile(
