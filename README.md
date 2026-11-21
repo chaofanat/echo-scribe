@@ -45,7 +45,7 @@
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts/download_model.ps1
    # 网络不畅时走代理：
-   powershell -ExecutionPolicy Bypass -File scripts/download_model.ps1 -Proxy http://127.0.0.1:6666
+   powershell -ExecutionPolicy Bypass -File scripts/download_model.ps1 -Proxy [本机代理地址例如http://127.0.0.1:6666]
    ```
 
 ## 运行
