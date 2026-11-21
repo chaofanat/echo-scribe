@@ -68,7 +68,7 @@ flutter build apk --release --target-platform android-arm64
 - release 当前用 debug 签名（自装可用）；对外发布前需配置正式 keystore
 
 - 录音文件保存在 `文档\EchoScribe\recordings\`（16kHz 单声道 WAV + 同名 `.json` 元数据）
-- 首次点击录音按钮会加载模型（数秒），之后复用
+- 模型随应用启动后台预载（首帧后即开始，状态栏显示「模型准备中」），点击录音零等待；识别器常驻内存、跨录音复用（代价是约 200MB 常驻内存——云端产品如讯飞听见没有本地模型，靠服务器换来了零启动成本）
 - 模型以 asset 打包进应用，运行时拷贝到应用数据目录使用
 
 ## Roadmap

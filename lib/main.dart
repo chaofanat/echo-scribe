@@ -91,6 +91,50 @@ class _RecorderPageState extends State<RecorderPage> {
   AudioSource _source = AudioSource.microphone;
   bool _wasDiarizing = false;
 
+  /// Startup preload of the models (see [_preload]).
+  Future<void>? _preloading;
+  String? _preloadError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Kick off model loading right after the first frame so the first
+    // record tap is instant; the tap path still waits if it beats the
+    // load (spinner).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _preload());
+  }
+
+  /// Loads the recognizer (and then the diarizer) in the background at
+  /// app start, so models are already resident when the user taps record
+  /// — the on-tap load pause disappears. Failures are surfaced when the
+  /// user actually tries to record; a failed attempt can be retried.
+  Future<void> _preload() {
+    return _preloading ??= () async {
+      _preloadError = null;
+      try {
+        final recognizer = await StreamingRecognizer.create();
+        if (!mounted) {
+          recognizer.dispose();
+          return;
+        }
+        setState(() => _recognizer = recognizer);
+        // Diarization is optional: a failure here only means recordings
+        // are saved without speaker labels.
+        try {
+          _diarizer = await SpeakerDiarizer.create();
+        } catch (e) {
+          debugPrint('diarizer create failed: $e');
+        }
+      } catch (e) {
+        debugPrint('recognizer create failed: $e');
+        _preloadError = '模型加载失败：$e';
+        // Let the next record tap retry from scratch.
+        _preloading = null;
+        if (mounted) setState(() {});
+      }
+    }();
+  }
+
   @override
   void dispose() {
     // Safety net: never leave the keep-alive service's notification behind.
@@ -119,25 +163,20 @@ class _RecorderPageState extends State<RecorderPage> {
     }
 
     if (_recognizer == null) {
+      // Normally the startup preload finished long ago; this only waits
+      // when recording starts within the first seconds after launch.
       setState(() => _loadingRecognizer = true);
-      try {
-        _recognizer = await StreamingRecognizer.create();
-        // Diarization is optional: a failure here only means recordings are
-        // saved without speaker labels.
-        try {
-          _diarizer = await SpeakerDiarizer.create();
-        } catch (e) {
-          debugPrint('diarizer create failed: $e');
-        }
-      } catch (e) {
-        if (mounted) {
-          _snack('模型加载失败：请先运行 scripts/download_model.ps1 下载模型');
-        }
-        debugPrint('recognizer create failed: $e');
-      } finally {
-        if (mounted) setState(() => _loadingRecognizer = false);
+      await _preload();
+      if (mounted) setState(() => _loadingRecognizer = false);
+      if (_recognizer == null) {
+        if (mounted) _snack(_preloadError ?? '模型加载失败');
+        return;
       }
-      if (_recognizer == null) return;
+    } else {
+      // The recognizer is up but the diarizer may still be loading behind
+      // it; wait for that tail so this recording still gets speaker labels
+      // (RecordingSession captures the diarizer at construction).
+      await _preloading;
     }
     await _startSession(
       RecordingSession(_recognizer!, _diarizer, _expectedSpeakers, _source),
@@ -352,6 +391,12 @@ class _RecorderPageState extends State<RecorderPage> {
     final recording = session?.status == SessionStatus.recording;
     final analyzing = session?.diarizing == true;
     final loopback = session?.source == AudioSource.systemAudio;
+    // Startup preload still running (cold start only, a few seconds).
+    final preparing =
+        session == null &&
+        _recognizer == null &&
+        _preloading != null &&
+        _preloadError == null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -361,6 +406,8 @@ class _RecorderPageState extends State<RecorderPage> {
                 ? (loopback ? Icons.volume_up : Icons.fiber_manual_record)
                 : analyzing
                 ? Icons.groups
+                : preparing
+                ? Icons.downloading
                 : Icons.mic_off,
             size: 16,
             color: recording
@@ -377,6 +424,8 @@ class _RecorderPageState extends State<RecorderPage> {
                       : '录音中 ${formatDuration(session!.elapsed)}')
                 : analyzing
                 ? '正在分析说话人…'
+                : preparing
+                ? '模型准备中…'
                 : '未在录音',
             style: TextStyle(
               color: recording
