@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../asr/capture_source.dart';
 import '../asr/transcript_segment.dart';
+import '../platform/recording_location.dart';
 
 /// A saved recording: a WAV file plus a sidecar `.json` file (same stem)
 /// holding its title, transcript, duration and (once diarization has run)
@@ -20,6 +21,7 @@ class Recording {
     this.speakerCount = 0,
     this.source = AudioSource.microphone,
     this.tags = const [],
+    this.location,
   });
 
   final String wavPath;
@@ -35,6 +37,10 @@ class Recording {
 
   /// User-assigned tags, used for filtering in the library.
   final List<String> tags;
+
+  /// Where the recording was made (Android, best-effort); null when no
+  /// fix was available or the permission was denied.
+  final RecordingLocation? location;
 
   /// Time-spans and speaker attribution per finalized segment; empty for
   /// recordings made before diarization (or when it failed).
@@ -65,6 +71,7 @@ class Recording {
         'speakerCount': speakerCount,
         'source': source.id,
         'tags': tags,
+        'location': location?.toJson(),
       };
 
   static Recording fromJson(String wavPath, Map<String, Object?> json) =>
@@ -83,6 +90,7 @@ class Recording {
         tags: (json['tags'] as List<Object?>? ?? const [])
             .whereType<String>()
             .toList(growable: false),
+        location: RecordingLocation.fromJson(json['location']),
       );
 }
 

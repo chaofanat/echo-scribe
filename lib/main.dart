@@ -9,6 +9,7 @@ import 'asr/recognizer.dart';
 import 'asr/recording_session.dart';
 import 'library/library_page.dart';
 import 'platform/background_recording.dart';
+import 'platform/recording_location.dart';
 import 'utils/format.dart';
 
 void main() {
@@ -193,6 +194,11 @@ class _RecorderPageState extends State<RecorderPage> {
     // Android only: keep capture + recognition running when the app is
     // backgrounded or the screen turns off.
     await BackgroundRecording.start();
+    // Android only: tag the recording with where it was made. Runs in
+    // parallel; a slow or failed fix never delays or breaks the recording.
+    captureRecordingLocation().then((location) {
+      if (location != null) session.location = location;
+    });
     session.addListener(_onSessionChanged);
     setState(() => _session = session);
   }

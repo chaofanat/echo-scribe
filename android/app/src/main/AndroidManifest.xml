@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- User-visible "正在录音" notification shown by the service (13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Best-effort "recorded at" tag; denied permission just skips it. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="EchoScribe"
         android:name="${applicationName}"

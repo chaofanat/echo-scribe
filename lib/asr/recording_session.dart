@@ -12,6 +12,7 @@ import 'capture_source.dart';
 import 'diarizer.dart';
 import 'recognizer.dart';
 import 'transcript_segment.dart';
+import '../platform/recording_location.dart';
 import '../utils/audio.dart';
 
 enum SessionStatus { idle, recording }
@@ -38,6 +39,10 @@ class RecordingSession extends ChangeNotifier {
   /// (whose transcript stays on screen) can be reused after switching the
   /// source in the UI; only read in [start].
   AudioSource source;
+
+  /// Where this recording was made (Android, best-effort): captured in
+  /// parallel right after [start] and written with the sidecar.
+  RecordingLocation? location;
 
   SessionStatus status = SessionStatus.idle;
   String partial = '';
@@ -107,6 +112,7 @@ class RecordingSession extends ChangeNotifier {
     segments.clear();
     partial = '';
     elapsed = Duration.zero;
+    location = null;
     savedFile = null;
     diarizing = false;
     speakerCount = 0;
@@ -252,6 +258,7 @@ class RecordingSession extends ChangeNotifier {
         'segments': [for (final segment in segments) segment.toJson()],
         'speakerCount': speakerCount,
         'source': source.id,
+        'location': location?.toJson(),
         // Raw diarization output, kept for diagnostics/re-analysis.
         'speakerTurns': [for (final turn in speakerTurns) turn.toJson()],
       }),

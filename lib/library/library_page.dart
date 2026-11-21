@@ -9,6 +9,7 @@ import '../asr/diarizer.dart';
 import '../asr/model_config.dart';
 import '../asr/transcript_segment.dart';
 import '../import/file_importer.dart';
+import '../platform/recording_location.dart';
 import 'recording_export.dart';
 import 'recording_filter.dart';
 import 'recordings_repository.dart';
@@ -399,11 +400,34 @@ class LibraryPageState extends State<LibraryPage> {
         title: Text(recording.title),
         content: SizedBox(
           width: 480,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              text.isEmpty ? '（无转写内容）' : text,
-              style: const TextStyle(fontSize: 15, height: 1.7),
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Where the recording was made (Android); taps open the map.
+              if (recording.location case final location?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextButton.icon(
+                    onPressed: () => openLocationInMap(location),
+                    icon: const Icon(Icons.place, size: 18),
+                    label: Text(
+                      location.display,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    text.isEmpty ? '（无转写内容）' : text,
+                    style: const TextStyle(fontSize: 15, height: 1.7),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
